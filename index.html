@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comic Generator with Voice Input</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/wav-converter@1.0.0/dist/wav-converter.min.js"></script>
+    <style>
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+        .comic-panel {
+            border: 2px solid #000;
+            margin-bottom: 20px;
+            background-color: white;
+        }
+        .character-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .character-card.selected {
+            border-color: #0d6efd;
+            background-color: #e6f2ff;
+        }
+        .character-img {
+            width: 100%;
+            height: auto; 
+            max-height: 150px;
+            object-fit: contain;
+        }
+        .recording-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: red;
+            display: inline-block;
+            margin-right: 10px;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.4;
+            }
+            100% {
+                opacity: 1;
+            }
+        }
+        #audioControls {
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">AI Comic Generator with Voice Input</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3>Create Your Comic</h3>
+                    </div>
+                    <div class="audio-upload-container">
+                        <h3>Upload Audio for Speech Recognition</h3>
+                        <form id="audioUploadForm" enctype="multipart/form-data">
+                            <div class="form-group">
+                                <label for="audioFile">Select an audio file (WAV format preferred):</label>
+                                <input type="file" id="audioFile" name="audio_file" accept=".wav" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Transcribe Audio</button>
+                        </form>
+                        <div id="transcriptionResult" class="mt-3">
+                            <textarea id="transcribedText" class="form-control" rows="4" readonly></textarea>
+                        </div>
+                        <div id="uploadProgress" class="progress mt-2" style="display: none;">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                        <form id="comicForm">
+                            <div class="mb-3">
+                                <label for="storyPrompt" class="form-label">Describe your comic:</label>
+                                <textarea class="form-control" id="storyPrompt" rows="3" placeholder="Tell us the story for your comic..."></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Number of Panels:</label>
+                                <select class="form-select" id="numPanels">
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3" selected>3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                    <option value="6">6</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Select Characters:</label>
+                                <div id="characterList" class="row">
+                                    <!-- Character cards will be inserted here -->
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary" id="generateBtn">Generate Comic</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3>Create Character</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="characterForm">
+                            <div class="mb-3">
+                                <label for="characterName" class="form-label">Character Name:</label>
+                                <input type="text" class="form-control" id="characterName" placeholder="e.g., Captain Awesome">
+                            </div>
+                            <div class="mb-3">
+                                <label for="characterDescription" class="form-label">Character Description:</label>
+                                <textarea class="form-control" id="characterDescription" rows="2" placeholder="e.g., A superhero with blonde hair, blue eyes, athletic build, wearing a blue and red costume"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-success">Create Character</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Generation Progress</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress mb-3" style="height: 25px;">
+                            <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
+                        <div id="statusMessage" class="alert alert-info">Ready to generate</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-12">
+                <h2>Your Comic</h2>
+                <div id="comicOutput" class="row">
+                    <!-- Comic panels will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Audio Recording Variables
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        // DOM Elements
+        const startRecordingBtn = document.getElementById('startRecording');
+        const stopRecordingBtn = document.getElementById('stopRecording');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const storyPromptTextarea = document.getElementById('storyPrompt');
+        
+        // Initialize character selection
+        let selectedCharacters = [];
+        
+        // Load existing characters when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCharacters();
+        });
+        
+        // Audio Recording Setup
+        startRecordingBtn.addEventListener('click', startRecording);
+        stopRecordingBtn.addEventListener('click', stopRecording);
+        
+        async function startRecording() {
+            try {
+                // Request audio permission
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Setup media recorder
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.addEventListener('dataavailable', event => {
+                    audioChunks.push(event.data);
+                });
+                
+                mediaRecorder.addEventListener('stop', processRecording);
+                
+                // Start recording
+                mediaRecorder.start();
+                isRecording = true;
+                
+                // Update UI
+                startRecordingBtn.disabled = true;
+                stopRecordingBtn.disabled = false;
+                recordingIndicator.style.display = 'inline-block';
+                
+                // Update status
+                document.getElementById('statusMessage').textContent = 'Recording audio...';
+                document.getElementById('statusMessage').className = 'alert alert-warning';
+                
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                alert('Could not access microphone. Please make sure you have granted permission.');
+                document.getElementById('statusMessage').textContent = 'Microphone access denied';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                // Update UI
+                startRecordingBtn.disabled = false;
+                stopRecordingBtn.disabled = true;
+                recordingIndicator.style.display = 'none';
+                
+                // Update status
+                document.getElementById('statusMessage').textContent = 'Processing audio...';
+            }
+        }
+        
+        function processRecording() {
+            // Create audio blob from recorded chunks
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm; codecs=opus' });
+            // Convert to WAV format using browser's built-in features
+            const reader = new FileReader();
+            reader.onload = function() {
+            	const arrayBuffer = this.result;
+            	const wavBlob = new Blob([new Uint8Array(arrayBuffer)], { type: 'audio/wav' });
+            // Create form data to send to server
+            const formData = new FormData();
+            formData.append('audio_blob', wavBlob, 'recording.wav');
+            
+            // Send to server for speech recognition
+            fetch('/process_blob', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Add recognized text to the prompt textarea
+                    const currentText = storyPromptTextarea.value;
+                    storyPromptTextarea.value = currentText ? 
+                        `${currentText} ${data.text}` : data.text;
+                    
+                    document.getElementById('statusMessage').textContent = 'Voice input processed successfully';
+                    document.getElementById('statusMessage').className = 'alert alert-success';
+                } else {
+                    document.getElementById('statusMessage').textContent = data.error || 'Error processing speech';
+                    document.getElementById('statusMessage').className = 'alert alert-danger';
+                }
+            })
+            .catch(error => {
+                console.error('Speech processing error:', error);
+                document.getElementById('statusMessage').textContent = 'Error sending audio to server';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+            });
+            reader.readAsArrayBuffer(audioBlob);
+        }
+        
+        // Character Management
+        function loadCharacters() {
+            fetch('/get_characters')
+                .then(response => response.json())
+                .then(data => {
+                    const characterList = document.getElementById('characterList');
+                    characterList.innerHTML = '';
+                    
+                    if (data.characters && data.characters.length > 0) {
+                        data.characters.forEach(character => {
+                            const characterCard = document.createElement('div');
+                            characterCard.className = 'col-md-4';
+                            characterCard.innerHTML = `
+                                <div class="character-card" data-name="${character}">
+                                    <img src="/static/characters/${character.replace(' ', '_')}.png" class="character-img">
+                                    <h5 class="mt-2">${character}</h5>
+                                </div>
+                            `;
+                            characterList.appendChild(characterCard);
+                            
+                            // Add click event to select character
+                            const card = characterCard.querySelector('.character-card');
+                            card.addEventListener('click', function() {
+                                this.classList.toggle('selected');
+                                
+                                if (this.classList.contains('selected')) {
+                                    if (!selectedCharacters.includes(character)) {
+                                        selectedCharacters.push(character);
+                                    }
+                                } else {
+                                    selectedCharacters = selectedCharacters.filter(name => name !== character);
+                                }
+                            });
+                        });
+                    } else {
+                        characterList.innerHTML = '<div class="col-12"><p>No characters created yet. Create one below!</p></div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading characters:', error);
+                });
+        }
+        
+        // Character Creation Form
+        document.getElementById('characterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('characterName').value.trim();
+            const description = document.getElementById('characterDescription').value.trim();
+            
+            if (!name || !description) {
+                alert('Please provide both name and description for the character');
+                return;
+            }
+            
+            document.getElementById('statusMessage').textContent = 'Creating character...';
+            document.getElementById('statusMessage').className = 'alert alert-info';
+            
+            fetch('/generate_character', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('characterName').value = '';
+                    document.getElementById('characterDescription').value = '';
+                    
+                    document.getElementById('statusMessage').textContent = data.message;
+                    document.getElementById('statusMessage').className = 'alert alert-success';
+                    
+                    // Reload character list
+                    loadCharacters();
+                } else {
+                    document.getElementById('statusMessage').textContent = data.error || 'Error creating character';
+                    document.getElementById('statusMessage').className = 'alert alert-danger';
+                }
+            })
+            .catch(error => {
+                console.error('Error creating character:', error);
+                document.getElementById('statusMessage').textContent = 'Server error creating character';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+            });
+        });
+        
+        // Comic Generation Form
+        document.getElementById('comicForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const prompt = document.getElementById('storyPrompt').value.trim();
+            const numPanels = document.getElementById('numPanels').value;
+            
+            if (!prompt) {
+                alert('Please provide a story prompt for your comic');
+                return;
+            }
+            
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('statusMessage').textContent = 'Generating comic...';
+            document.getElementById('statusMessage').className = 'alert alert-info';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('comicOutput').innerHTML = '';
+            
+            fetch('/generate_comic', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    characters: selectedCharacters,
+                    num_panels: numPanels
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const sessionId = data.session_id;
+                    checkProgress(sessionId);
+                } else {
+                    document.getElementById('statusMessage').textContent = data.error || 'Error generating comic';
+                    document.getElementById('statusMessage').className = 'alert alert-danger';
+                    document.getElementById('generateBtn').disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error generating comic:', error);
+                document.getElementById('statusMessage').textContent = 'Server error generating comic';
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+                document.getElementById('generateBtn').disabled = false;
+            });
+        });
+        
+        // Check Progress Function
+        function checkProgress(sessionId) {
+            fetch(`/check_progress/${sessionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    // Update progress bar
+                    const progress = data.progress;
+                    document.getElementById('progressBar').style.width = `${progress}%`;
+                    document.getElementById('progressBar').textContent = `${progress}%`;
+                    
+                    if (data.complete) {
+                        if (data.results && data.results.success) {
+                            // Display comic panels
+                            displayComicPanels(data.results.panels);
+                            
+                            document.getElementById('statusMessage').textContent = data.results.message;
+                            document.getElementById('statusMessage').className = 'alert alert-success';
+                        } else {
+                            document.getElementById('statusMessage').textContent = data.error || 'Error during generation';
+                            document.getElementById('statusMessage').className = 'alert alert-danger';
+                        }
+                        
+                        document.getElementById('generateBtn').disabled = false;
+                    } else {
+                        // Continue checking progress
+                        setTimeout(() => checkProgress(sessionId), 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking progress:', error);
+                    document.getElementById('statusMessage').textContent = 'Error checking generation progress';
+                    document.getElementById('statusMessage').className = 'alert alert-danger';
+                    document.getElementById('generateBtn').disabled = false;
+                });
+        }
+        
+        // Display Comic Panels
+        function displayComicPanels(panels) {
+            const comicOutput = document.getElementById('comicOutput');
+            comicOutput.innerHTML = '';
+            
+            panels.forEach((panel, index) => {
+                const panelDiv = document.createElement('div');
+                panelDiv.className = 'col-md-4 mb-4';
+                panelDiv.innerHTML = `
+                    <div class="card comic-panel">
+                        <div class="card-body p-0">
+                            <img src="/static/generated/${panel.filename}" class="img-fluid" alt="Comic Panel ${index + 1}">
+                        </div>
+                    </div>
+                `;
+                comicOutput.appendChild(panelDiv);
+            });
+        }
+    </script>
+</body>
+</html>
